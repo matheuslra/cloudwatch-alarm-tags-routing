@@ -68,7 +68,7 @@ Creating an alarm with propagation on needs `cloudwatch:ListTagsForResource` on 
 
 The `Security` workflow runs on every push to `main`, on pull requests, weekly, and on demand. None of its jobs needs an API key or AWS access.
 
-- **Secret scan:** gitleaks checks the new commits on a push or pull request, and the full git history on the weekly and on-demand runs.
+- **Secret scan:** gitleaks checks the full git history on every run.
 - **Code scan:** CodeQL checks the Python code and the GitHub Actions workflows, and fails on any finding.
 - **Smoke test:** runs the offline tests.
 
