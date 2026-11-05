@@ -1,0 +1,121 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: One EventBridge rule per team on alarmTags.Team, plus catch-alls for alarms that match no team
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+
+Resources:
+  PaymentsTopic:
+    Type: AWS::SNS::Topic
+  SearchTopic:
+    Type: AWS::SNS::Topic
+  # Send this somewhere a person looks every day. An unmatched event is the new unmapped alarm.
+  UnroutedTopic:
+    Type: AWS::SNS::Topic
+
+  PaymentsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Alarms owned by payments
+      EventPattern:
+        source: [aws.cloudwatch]
+        detail-type: [CloudWatch Alarm State Change]
+        detail:
+          state:
+            value: [ALARM]
+          alarmTags:
+            Team: [payments]
+            Environment: [!Ref Environment]
+      Targets:
+        - Id: payments
+          Arn: !Ref PaymentsTopic
+
+  SearchRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Alarms owned by search
+      EventPattern:
+        source: [aws.cloudwatch]
+        detail-type: [CloudWatch Alarm State Change]
+        detail:
+          state:
+            value: [ALARM]
+          alarmTags:
+            Team: [search]
+            Environment: [!Ref Environment]
+      Targets:
+        - Id: search
+          Arn: !Ref SearchTopic
+
+  # Also catches alarms without propagation, and events whose tags CloudWatch couldn't read.
+  NoTeamTagRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Alarms with no Team tag in the event
+      EventPattern:
+        source: [aws.cloudwatch]
+        detail-type: [CloudWatch Alarm State Change]
+        detail:
+          state:
+            value: [ALARM]
+          alarmTags:
+            Team:
+              - exists: false
+      Targets:
+        - Id: unrouted
+          Arn: !Ref UnroutedTopic
+
+  # Add each new team here as well as giving it a rule above, or its pages go to both.
+  UnknownTeamRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Alarms with a Team tag no rule handles, such as a typo
+      EventPattern:
+        source: [aws.cloudwatch]
+        detail-type: [CloudWatch Alarm State Change]
+        detail:
+          state:
+            value: [ALARM]
+          alarmTags:
+            Team:
+              - anything-but: [payments, search]
+      Targets:
+        - Id: unrouted
+          Arn: !Ref UnroutedTopic
+
+  TopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref PaymentsTopic
+        - !Ref SearchTopic
+        - !Ref UnroutedTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource:
+              - !Ref PaymentsTopic
+              - !Ref SearchTopic
+              - !Ref UnroutedTopic
+            # Only this stack's rules can publish, not EventBridge rules in other accounts.
+            Condition:
+              ArnEquals:
+                aws:SourceArn:
+                  - !GetAtt PaymentsRule.Arn
+                  - !GetAtt SearchRule.Arn
+                  - !GetAtt NoTeamTagRule.Arn
+                  - !GetAtt UnknownTeamRule.Arn
+
+Outputs:
+  PaymentsTopicArn:
+    Value: !Ref PaymentsTopic
+  SearchTopicArn:
+    Value: !Ref SearchTopic
+  UnroutedTopicArn:
+    Value: !Ref UnroutedTopic
