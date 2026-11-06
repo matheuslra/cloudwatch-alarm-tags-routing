@@ -15,46 +15,21 @@ A known team with a different `Environment` matches no rule, so it pages nobody.
 
 ## What gets deployed
 
-The same stack is here three times. Pick one:
-
-| Path | Tool |
-| --- | --- |
-| `cloudformation/template.yaml` | CloudFormation |
-| `cdk/` | AWS CDK in TypeScript |
-| `terraform/` | Terraform. The alarms use the `awscc` provider, because the `aws` provider doesn't support tag propagation yet |
-
-Each one creates:
-
 - **Three demo alarms** on metrics that get no data, so they stay in `OK` until you change their state. Each one sends `Team` and `Environment` in its events. `sample-checkout-errors` also has a `CostCenter` tag, which the include list keeps out of the payload. `sample-typo-team` is tagged `Team=paymnets`.
 - **Three SNS topics and four EventBridge rules,** with a topic policy that only lets these rules publish.
 - **An email subscription on each topic,** if you give an address, so you can read the events.
 
-## Deploy
+## Pick a version
+
+The stack is written three ways. They create the same resources, so deploy only one. Each folder's README has its deploy command, settings, outputs and clean-up.
+
+| Version | Folder |
+| --- | --- |
+| CloudFormation | [`cloudformation/`](cloudformation/README.md) |
+| AWS CDK in TypeScript | [`cdk/`](cdk/README.md) |
+| Terraform | [`terraform/`](terraform/README.md) |
 
 This creates real resources, and alarms have a cost. As soon as it's deployed, `NoTeamTagRule` also matches every alarm in the account that doesn't propagate tags. In a busy account, expect the unrouted topic to get messages from your existing alarms.
-
-**CloudFormation:**
-
-```bash
-aws cloudformation deploy --stack-name sample-alarm-routing --template-file cloudformation/template.yaml \
-  --parameter-overrides NotificationEmail=you@example.com
-```
-
-**CDK:**
-
-```bash
-cd cdk && npm ci && npx cdk deploy -c notificationEmail=you@example.com
-```
-
-`cdk synth` warns that `ActionConfiguration` isn't in its bundled schema. CloudFormation accepts it, so you can ignore the warning.
-
-**Terraform:**
-
-```bash
-cd terraform && terraform init && terraform apply -var notification_email=you@example.com
-```
-
-Confirm the three subscription emails SNS sends you.
 
 ## Fire an alarm
 
@@ -86,17 +61,11 @@ python scripts/audit_alarms.py
 
 ## Clean up
 
-```bash
-aws cloudformation delete-stack --stack-name sample-alarm-routing   # CloudFormation
-npx cdk destroy                                                      # CDK, from cdk/
-terraform destroy                                                    # Terraform, from terraform/
-```
+Remove the stack with your version's clean-up step: [CloudFormation](cloudformation/README.md#clean-up), [CDK](cdk/README.md#clean-up) or [Terraform](terraform/README.md#clean-up).
 
-## What was tested
+## What CI checks
 
-- CI lints the CloudFormation template, synthesizes the CDK app and validates the Terraform on every push. AWS's `ValidateTemplate` API accepted the template.
-- The four rule patterns passed eight routing cases against EventBridge's `TestEventPattern` API, using an event modeled on the AWS docs.
-- I haven't deployed these stacks or fired a real alarm through them, so try them in a test account first.
+On every push, CI lints the CloudFormation template, synthesizes the CDK app, validates the Terraform and checks the audit script. None of it needs AWS credentials. The four rule patterns also passed eight routing cases against EventBridge's `TestEventPattern` API, using an event modeled on the AWS docs.
 
 ## Learn more
 
