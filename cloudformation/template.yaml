@@ -1,12 +1,95 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: One EventBridge rule per team on alarmTags.Team, plus catch-alls for alarms that match no team
+Description: >-
+  Alarms that carry their tags into EventBridge, one rule per team on alarmTags.Team,
+  and catch-alls for alarms that match no team
 
 Parameters:
   Environment:
     Type: String
     Default: prod
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: Optional. Subscribes this address to all three topics so you can read the events
+
+Conditions:
+  HasEmail: !Not [!Equals [!Ref NotificationEmail, '']]
 
 Resources:
+  # Demo alarms. Fire one with: aws cloudwatch set-alarm-state --state-value ALARM ...
+  # Only Team and Environment leave in the payload. CostCenter stays behind, because SNS shares tags with every subscriber.
+  CheckoutErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: sample-checkout-errors
+      AlarmDescription: Demo alarm owned by payments
+      Namespace: Sample/AlarmTags
+      MetricName: CheckoutErrors
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Team
+          Value: payments
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: CostCenter
+          Value: cc-1234
+      ActionConfiguration:
+        AlarmTagsPropagation:
+          Enabled: true
+          IncludedTagKeys: [Team, Environment]
+
+  SearchLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: sample-search-latency
+      AlarmDescription: Demo alarm owned by search
+      Namespace: Sample/AlarmTags
+      MetricName: SearchLatency
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 500
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Team
+          Value: search
+        - Key: Environment
+          Value: !Ref Environment
+      ActionConfiguration:
+        AlarmTagsPropagation:
+          Enabled: true
+          IncludedTagKeys: [Team, Environment]
+
+  # The Team tag has a typo, so no team rule matches and UnknownTeamRule catches it.
+  TypoTeamAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: sample-typo-team
+      AlarmDescription: Demo alarm with a misspelled Team tag
+      Namespace: Sample/AlarmTags
+      MetricName: RefundErrors
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Team
+          Value: paymnets
+        - Key: Environment
+          Value: !Ref Environment
+      ActionConfiguration:
+        AlarmTagsPropagation:
+          Enabled: true
+          IncludedTagKeys: [Team, Environment]
+
   PaymentsTopic:
     Type: AWS::SNS::Topic
   SearchTopic:
@@ -111,6 +194,28 @@ Resources:
                   - !GetAtt SearchRule.Arn
                   - !GetAtt NoTeamTagRule.Arn
                   - !GetAtt UnknownTeamRule.Arn
+
+  PaymentsEmail:
+    Type: AWS::SNS::Subscription
+    Condition: HasEmail
+    Properties:
+      TopicArn: !Ref PaymentsTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+  SearchEmail:
+    Type: AWS::SNS::Subscription
+    Condition: HasEmail
+    Properties:
+      TopicArn: !Ref SearchTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+  UnroutedEmail:
+    Type: AWS::SNS::Subscription
+    Condition: HasEmail
+    Properties:
+      TopicArn: !Ref UnroutedTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
 
 Outputs:
   PaymentsTopicArn:
